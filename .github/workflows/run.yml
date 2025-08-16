@@ -32,7 +32,7 @@ jobs:
           echo "WIN_EXTRA=https://raw.githubusercontent.com/crazy-max/WindowsSpyBlocker/master/data/hosts/extra.txt" >> $GITHUB_ENV
           echo "GEOIP_HASH=https://raw.githubusercontent.com/daiyeqi/v2ray-rules-dat/release/geoip.dat.sha256sum" >> $GITHUB_ENV
           echo "GEOSITE_HASH=https://raw.githubusercontent.com/daiyeqi/v2ray-rules-dat/release/geosite.dat.sha256sum" >> $GITHUB_ENV
-          ECHO "RULEZIP_HASH=https://raw.githubusercontent.com/daiyeqi/v2ray-rules-dat/release/rules.zip.sha256sum" >> $GITHUB_ENV
+          echo "RULEZIP_HASH=https://raw.githubusercontent.com/daiyeqi/v2ray-rules-dat/release/rules.zip.sha256sum" >> $GITHUB_ENV
         shell: bash
 
       - name: Checkout the "hidden" branch of this repo
