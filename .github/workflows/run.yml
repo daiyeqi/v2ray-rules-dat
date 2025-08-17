@@ -8,13 +8,15 @@ on:
       - master
     paths-ignore:
       - "**/README.md"
+env:
+  EXTRA_EXPORT_FILES: "netflix youtube primevideo hbo disney roku spotify tiktok twitch xvideos pornhub dmm dlsite telegram instagram threads facebook snap speedtest openai playstation nintendo xbox steam ea epicgames ubisoft"
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Set variables
         run: |
-          echo "RELEASE_NAME=Released on $(date +%Y%m%d%H%M)" >> $GITHUB_ENV
           echo "TAG_NAME=$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
           echo "CHINA_DOMAINS_URL=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/accelerated-domains.china.conf" >> $GITHUB_ENV
           echo "GOOGLE_DOMAINS_URL=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/google.china.conf" >> $GITHUB_ENV
@@ -23,11 +25,14 @@ jobs:
           echo "PETERLOWE_REJECT_URL=https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext" >> $GITHUB_ENV
           echo "ADGUARD_DNS_REJECT_URL=https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt" >> $GITHUB_ENV
           echo "DANPOLLOCK_REJECT_URL=https://someonewhocares.org/hosts/hosts" >> $GITHUB_ENV
-          echo "CUSTOM_DIRECT=https://raw.githubusercontent.com/Loyalsoldier/domain-list-custom/release/cn.txt" >> $GITHUB_ENV
-          echo "CUSTOM_PROXY=https://raw.githubusercontent.com/Loyalsoldier/domain-list-custom/release/geolocation-!cn.txt" >> $GITHUB_ENV
+          echo "CUSTOM_DIRECT=https://raw.githubusercontent.com/daiyeqi/domain-list-custom/release/cn.txt" >> $GITHUB_ENV
+          echo "CUSTOM_PROXY=https://raw.githubusercontent.com/daiyeqi/domain-list-custom/release/geolocation-!cn.txt" >> $GITHUB_ENV
           echo "WIN_SPY=https://raw.githubusercontent.com/crazy-max/WindowsSpyBlocker/master/data/hosts/spy.txt" >> $GITHUB_ENV
           echo "WIN_UPDATE=https://raw.githubusercontent.com/crazy-max/WindowsSpyBlocker/master/data/hosts/update.txt" >> $GITHUB_ENV
           echo "WIN_EXTRA=https://raw.githubusercontent.com/crazy-max/WindowsSpyBlocker/master/data/hosts/extra.txt" >> $GITHUB_ENV
+          echo "GEOIP_HASH=https://raw.githubusercontent.com/daiyeqi/v2ray-rules-dat/release/geoip.dat.sha256sum" >> $GITHUB_ENV
+          echo "GEOSITE_HASH=https://raw.githubusercontent.com/daiyeqi/v2ray-rules-dat/release/geosite.dat.sha256sum" >> $GITHUB_ENV
+          echo "RULETAR_HASH=https://raw.githubusercontent.com/daiyeqi/v2ray-rules-dat/release/rules.tar.sha256sum" >> $GITHUB_ENV
         shell: bash
 
       - name: Checkout the "hidden" branch of this repo
@@ -35,10 +40,10 @@ jobs:
         with:
           ref: hidden
 
-      - name: Checkout Loyalsoldier/domain-list-custom
+      - name: Checkout daiyeqi/domain-list-custom
         uses: actions/checkout@v5
         with:
-          repository: Loyalsoldier/domain-list-custom
+          repository: daiyeqi/domain-list-custom
           path: custom
 
       - name: Checkout v2fly/domain-list-community
@@ -167,31 +172,39 @@ jobs:
       - name: Build geosite.dat file
         run: |
           cd custom || exit 1
-          go run ./ --datapath=../community/data
+          FLAG_EXTRA_EXPORT_FILES=$(echo "${{ env.EXTRA_EXPORT_FILES }}"| tr ' ' ',')
+          go run ./ --datapath=../community/data --exportlists=$FLAG_EXTRA_EXPORT_FILES
 
-      - name: Move and zip files and generate sha256 hash
+      - name: Move and tar files and generate sha256 hash
         run: |
           install -Dp ./geoip.dat ./publish/geoip.dat
           install -Dp ./geoip.dat.sha256sum ./publish/geoip.dat.sha256sum
           install -Dp ./custom/publish/geosite.dat ./publish/geosite.dat
+          for export_file in ${{ env.EXTRA_EXPORT_FILES }}; do
+            cat ./custom/publish/${export_file}.txt | sort --ignore-case -u > ${export_file}.txt
+            install -p ${export_file}.txt ./publish/
+          done
           install -p {proxy,direct,reject}-tld-list.txt ./publish/
           install -p {proxy,direct,reject}-list.txt ./publish/
           install -p {china-list,apple-cn,google-cn,gfw,greatfire,win-spy,win-update,win-extra}.txt ./publish/
-          cd ./publish || exit 1
-          zip rules.zip {proxy,direct,reject}-list.txt geoip.dat geosite.dat
+          cd publish || exit 1
           sha256sum geosite.dat > geosite.dat.sha256sum
-          sha256sum rules.zip > rules.zip.sha256sum
+          tar --sort=name --mtime='1970-01-01 00:00:00Z' -cf rules.tar *.txt
+          sha256sum rules.tar > rules.tar.sha256sum
 
-      - name: Release and upload assets
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          release_name: ${{ env.RELEASE_NAME }}
-          tag: ${{ env.TAG_NAME }}
-          file_glob: true
-          file: ./publish/*
+      - name: Compare build checksum against previous release
+        run: |
+          cd publish || exit 1
+          if ! diff -q geoip.dat.sha256sum <(curl -sL "${{ env.GEOIP_HASH }}"); then
+            echo "NEED_RELEASE=true" >> $GITHUB_ENV
+          elif ! diff -q geosite.dat.sha256sum <(curl -sL "${{ env.GEOSITE_HASH }}"); then
+            echo "NEED_RELEASE=true" >> $GITHUB_ENV
+          elif ! diff -q rules.tar.sha256sum <(curl -sL "${{ env.RULETAR_HASH }}"); then
+            echo "NEED_RELEASE=true" >> $GITHUB_ENV
+          fi  
 
       - name: Git push assets to "release" branch
+        if: ${{ env.NEED_RELEASE }}
         run: |
           cd publish || exit 1
           git init
@@ -199,13 +212,16 @@ jobs:
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b release
           git add .
-          git commit -m "${{ env.RELEASE_NAME }}"
+          git commit -m "Released on ${{ env.TAG_NAME }}"
           git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
           git push -f -u origin release
 
-      - name: Purge jsdelivr CDN
-        run: |
-          cd publish || exit 1
-          for file in $(ls); do
-            curl -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@release/${file}"
-          done
+      - name: Release and upload assets
+        if: ${{ env.NEED_RELEASE }}
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          release_name: ${{ env.TAG_NAME }}
+          tag: ${{ env.TAG_NAME }}
+          file_glob: true
+          file: ./publish/*.{dat,tar,sha256sum}
