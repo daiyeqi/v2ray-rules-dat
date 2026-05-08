@@ -8,6 +8,8 @@ on:
       - master
     paths-ignore:
       - "**/README.md"
+permissions:
+  contents: write
 env:
   EXTRA_EXPORT_FILES: "netflix youtube primevideo hbo disney roku spotify tiktok twitch xvideos pornhub dmm dlsite telegram instagram threads facebook snap speedtest openai playstation nintendo xbox steam ea epicgames ubisoft"
 
@@ -201,7 +203,7 @@ jobs:
             echo "NEED_RELEASE=true" >> $GITHUB_ENV
           elif ! diff -q rules.tar.sha256sum <(curl -sL "${{ env.RULETAR_HASH }}"); then
             echo "NEED_RELEASE=true" >> $GITHUB_ENV
-          fi  
+          fi
 
       - name: Git push assets to "release" branch
         if: ${{ env.NEED_RELEASE }}
@@ -215,6 +217,15 @@ jobs:
           git commit -m "Released on ${{ env.TAG_NAME }}"
           git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
           git push -f -u origin release
+
+      - name: Cleanup releases and tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP_RELEASES: 5
+        if: ${{ env.NEED_RELEASE }}
+        run: |
+          gh release list --repo "${{ github.repository }}" --limit 1000 --json tagName --jq ".[$KEEP_RELEASES:] | .[].tagName" | xargs -r -n1 gh release delete --repo "${{ github.repository }}" --cleanup-tag --yes
+        shell: bash
 
       - name: Release and upload assets
         if: ${{ env.NEED_RELEASE }}
